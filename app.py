@@ -227,10 +227,7 @@ def submit():
     combined_score = scoring.combine_signals(model_score, style_score)
 
     content_id = str(uuid.uuid4())
-    # Milestone 4: both signals and the combined score are real. guess and
-    # label stay placeholders until the label mapping (M5) exists.
-    guess = "unsure"
-    label = "placeholder"
+    guess, label = scoring.score_to_label(combined_score)
 
     entry = audit.log_decision(
         content_id=content_id,
@@ -281,14 +278,37 @@ def appeal():
     to the person on the other end. It's the only thing standing between a
     wrong accusation and nothing at all.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return _reject("unknown", "invalid_json", "Send a JSON object with content_id and reasoning.")
 
-    # TODO: delete this and build the route.
+    content_id = payload.get("content_id")
+    reasoning = payload.get("reasoning")
+    if not isinstance(content_id, str) or not content_id.strip():
+        return _reject("unknown", "missing_content_id", "content_id is required.")
+    content_id = content_id.strip()
+    if not isinstance(reasoning, str) or not reasoning.strip() or len(reasoning.strip()) > 2000:
+        return _reject("unknown", "missing_reasoning", "reasoning is required, up to 2,000 characters.")
+    reasoning = reasoning.strip()
+
+    # The original decision is the entry for this id with no "event" — appeals
+    # for the same id sit after it. creator_id comes from there, not the request.
+    decisions = [e for e in audit.entries_for(content_id) if "event" not in e]
+    if not decisions:
+        return _reject("unknown", "unknown_content_id", "We couldn't find a submission with that content_id.", 404)
+
+    entry = audit.log_appeal(
+        content_id=content_id,
+        creator_id=decisions[0]["creator_id"],
+        reasoning=reasoning,
+    )
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-        "you_sent": payload,
-    }), 501
+        "content_id": content_id,
+        "status": entry["status"],
+        "message": "We've received your appeal. A person will review this piece, and the original result is on hold until they do.",
+        "appealed_at": entry["timestamp"],
+    })
 
 
 # ── Already works ─────────────────────────────────────────────────────────────

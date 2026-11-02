@@ -193,14 +193,32 @@ plain average would label "ai" on one signal's word. My rule holds it at
 
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
-| high-confidence human |  |  |
-| unsure |  |  |
-| high-confidence AI |  |  |
+| high-confidence human (`guess: "human"`) | 0.00 – 0.35 | We think this was probably written by a person. This is an automated estimate, not a final decision. If anything about it looks wrong, you can ask for a person to review it. |
+| unsure (`guess: "unsure"`) | above 0.35 and below 0.65 | We couldn't tell whether this was written by a person or with help from an AI tool. This is not an accusation: plenty of people's own writing lands here, and nothing has been decided against you. If you'd like a person to take a look, you can ask for a review. |
+| high-confidence AI (`guess: "ai"`) | 0.65 – 1.00 | Our system thinks this may have been written with help from an AI tool. This is an automated estimate and it can be wrong, especially with plain or simple writing. If you wrote this yourself, you can ask for a review and a person will look at it. |
+
+The thresholds count as confident: exactly 0.35 is "human" and exactly 0.65
+is "ai". The bands touch, so every score from 0 to 1 gets a label. The text
+lives in `scoring.py` (`LABEL_HUMAN`, `LABEL_UNSURE`, `LABEL_AI`), and
+`scoring.py::score_to_label` picks one.
+
+All three are reachable. In the Sample Run below, three submissions scored
+0.8706, 0.3931 and 0.2264 and got "ai", "unsure" and "human".
+
+Every label ends the same way: it's an estimate, and a person will look again
+if you ask. None of them says "this is AI". The strongest one says what the
+system *thinks*, warns that plain writing is where it goes wrong (the false
+positive from PLAN.md §3), and tells the writer what to do.
 
 **Why I worded the "unsure" one this way:**
-<!-- It's the hardest of the three. It has to admit uncertainty without
-     sounding like an accusation, because the person reading it may well have
-     written every word themselves. -->
+The person reading it may well have written every word, so it says what
+happened ("we couldn't tell") and not what the writer might have done. It
+names both possibilities with equal weight, so neither sounds like the real
+answer. Then it says outright that it isn't an accusation and that nothing
+has been decided against them, because "unsure" on your own essay reads as
+suspicion unless someone tells you otherwise. "Plenty of people's own writing
+lands here" is there so the writer doesn't feel singled out. The review offer
+comes last and is framed as an option, not a defence they have to mount.
 
 
 
@@ -218,8 +236,9 @@ plain average would label "ai" on one signal's word. My rule holds it at
      two off the response, so leaving them out costs you next unit's
      diagnostics. -->
 
-*Milestone 4: both signals and the combined score (`confidence`) are real.
-`guess` and `label` are placeholders until Milestone 5.*
+Three submissions, one aimed at each label.
+
+High-confidence AI:
 
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
@@ -230,15 +249,17 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 ```json
 {
   "confidence": 0.8706,
-  "content_id": "5fc28325-5f5d-4f41-aa43-fb182a0ffbe1",
+  "content_id": "01f550bf-c880-40fb-935d-a59dbe0b15d8",
   "creator_id": "nancy",
-  "guess": "unsure",
-  "label": "placeholder",
+  "guess": "ai",
+  "label": "Our system thinks this may have been written with help from an AI tool. This is an automated estimate and it can be wrong, especially with plain or simple writing. If you wrote this yourself, you can ask for a review and a person will look at it.",
   "model_score": 0.9207,
   "status": "decided",
   "style_score": 0.8206
 }
 ```
+
+Unsure:
 
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
@@ -249,13 +270,34 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 ```json
 {
   "confidence": 0.3931,
-  "content_id": "d652551d-e0e3-4615-bb31-4ef482306d85",
+  "content_id": "8a18d7f2-d652-4f47-92cc-41c45c3c5a27",
   "creator_id": "nancy",
   "guess": "unsure",
-  "label": "placeholder",
+  "label": "We couldn't tell whether this was written by a person or with help from an AI tool. This is not an accusation: plenty of people's own writing lands here, and nothing has been decided against you. If you'd like a person to take a look, you can ask for a review.",
   "model_score": 0.3229,
   "status": "decided",
   "style_score": 0.4633
+}
+```
+
+High-confidence human:
+
+```bash
+$ curl -X POST http://127.0.0.1:5000/submit \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Okay, so the bus was late again (third time this week!) and I'\''m standing there in the rain, soaked, thinking: why do I even bother? Then this guy, maybe seventy, wearing a full tuxedo, honestly, a tuxedo at 7am, starts humming Sinatra; loudly. Nobody looked up. I laughed so hard I missed the bus anyway. Worth it? Absolutely.", "creator_id": "nancy"}'
+```
+
+```json
+{
+  "confidence": 0.2264,
+  "content_id": "eee798e3-52da-47c8-a257-a19393650c97",
+  "creator_id": "nancy",
+  "guess": "human",
+  "label": "We think this was probably written by a person. This is an automated estimate, not a final decision. If anything about it looks wrong, you can ask for a person to review it.",
+  "model_score": 0.4306,
+  "status": "decided",
+  "style_score": 0.0222
 }
 ```
 
@@ -274,54 +316,108 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 
 **An appeal**
 
+Against the "ai" submission above, using its real `content_id`:
+
 ```bash
 $ curl -X POST http://127.0.0.1:5000/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id": "...", "reasoning": "..."}'
-```
-
-```json
-
-```
-
-**What the log shows afterwards**
-
-```bash
-$ curl "http://127.0.0.1:5000/log?limit=3"
+  -d '{"content_id": "01f550bf-c880-40fb-935d-a59dbe0b15d8", "reasoning": "I wrote this myself for a class assignment. I write in a plain, formal style on purpose."}'
 ```
 
 ```json
 {
-  "count": 3,
+  "appealed_at": "2026-11-02T18:17:51+00:00",
+  "content_id": "01f550bf-c880-40fb-935d-a59dbe0b15d8",
+  "message": "We've received your appeal. A person will review this piece, and the original result is on hold until they do.",
+  "status": "under_review"
+}
+```
+
+An id that was never submitted is refused, and the refusal is logged:
+
+```bash
+$ curl -X POST http://127.0.0.1:5000/appeal \
+  -H "Content-Type: application/json" \
+  -d '{"content_id": "not-a-real-id", "reasoning": "test"}'
+```
+
+```json
+{
+  "error": "unknown_content_id",
+  "message": "We couldn't find a submission with that content_id."
+}
+```
+*(HTTP 404)*
+
+**What the log shows afterwards**
+
+The original decision for `01f550bf…` is still there, unchanged, with status
+`decided`. The appeal sits after it as its own entry with status
+`under_review`. Its `creator_id` was copied from the decision, not taken from
+the request.
+
+```bash
+$ curl "http://127.0.0.1:5000/log?limit=6"
+```
+
+```json
+{
+  "count": 6,
   "entries": [
-    {
-      "combined_score": 0.8706,
-      "content_id": "5fc28325-5f5d-4f41-aa43-fb182a0ffbe1",
-      "creator_id": "nancy",
-      "guess": "unsure",
-      "label": "placeholder",
-      "model_score": 0.9207,
-      "status": "decided",
-      "style_score": 0.8206,
-      "timestamp": "2026-11-02T17:06:37+00:00"
-    },
-    {
-      "combined_score": 0.3931,
-      "content_id": "d652551d-e0e3-4615-bb31-4ef482306d85",
-      "creator_id": "nancy",
-      "guess": "unsure",
-      "label": "placeholder",
-      "model_score": 0.3229,
-      "status": "decided",
-      "style_score": 0.4633,
-      "timestamp": "2026-11-02T17:06:37+00:00"
-    },
     {
       "creator_id": "nancy",
       "event": "rejected",
       "reason": "missing_text",
       "status": "rejected",
       "timestamp": "2026-11-02T17:06:46+00:00"
+    },
+    {
+      "combined_score": 0.8706,
+      "content_id": "01f550bf-c880-40fb-935d-a59dbe0b15d8",
+      "creator_id": "nancy",
+      "guess": "ai",
+      "label": "Our system thinks this may have been written with help from an AI tool. This is an automated estimate and it can be wrong, especially with plain or simple writing. If you wrote this yourself, you can ask for a review and a person will look at it.",
+      "model_score": 0.9207,
+      "status": "decided",
+      "style_score": 0.8206,
+      "timestamp": "2026-11-02T18:17:40+00:00"
+    },
+    {
+      "combined_score": 0.3931,
+      "content_id": "8a18d7f2-d652-4f47-92cc-41c45c3c5a27",
+      "creator_id": "nancy",
+      "guess": "unsure",
+      "label": "We couldn't tell whether this was written by a person or with help from an AI tool. This is not an accusation: plenty of people's own writing lands here, and nothing has been decided against you. If you'd like a person to take a look, you can ask for a review.",
+      "model_score": 0.3229,
+      "status": "decided",
+      "style_score": 0.4633,
+      "timestamp": "2026-11-02T18:17:40+00:00"
+    },
+    {
+      "combined_score": 0.2264,
+      "content_id": "eee798e3-52da-47c8-a257-a19393650c97",
+      "creator_id": "nancy",
+      "guess": "human",
+      "label": "We think this was probably written by a person. This is an automated estimate, not a final decision. If anything about it looks wrong, you can ask for a person to review it.",
+      "model_score": 0.4306,
+      "status": "decided",
+      "style_score": 0.0222,
+      "timestamp": "2026-11-02T18:17:40+00:00"
+    },
+    {
+      "content_id": "01f550bf-c880-40fb-935d-a59dbe0b15d8",
+      "creator_id": "nancy",
+      "event": "appeal",
+      "reasoning": "I wrote this myself for a class assignment. I write in a plain, formal style on purpose.",
+      "status": "under_review",
+      "timestamp": "2026-11-02T18:17:51+00:00"
+    },
+    {
+      "creator_id": "unknown",
+      "event": "rejected",
+      "reason": "unknown_content_id",
+      "status": "rejected",
+      "timestamp": "2026-11-02T18:17:51+00:00"
     }
   ]
 }

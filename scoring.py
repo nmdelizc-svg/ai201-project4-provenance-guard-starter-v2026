@@ -113,13 +113,40 @@ def score_to_label(score: float) -> tuple[str, str]:
     written every word themselves. Your breakout asks your group what they'd
     think if they got it on their own work. That question is the whole
     milestone.
+
+    The thresholds themselves count as confident (>= / <=), which is why
+    combine_signals clamps a split SPLIT_MARGIN inside them.
+
+    Every label ends the same way: it's an estimate, and a person will look
+    again if you ask. None of them says "this is AI" — the strongest one says
+    what the system thinks and how to challenge it.
     """
-    # TODO: replace this — thresholds are in config.py
     if score >= config.AI_THRESHOLD:
-        return "ai", "PLACEHOLDER — write the high-confidence AI label."
+        return "ai", LABEL_AI
     if score <= config.HUMAN_THRESHOLD:
-        return "human", "PLACEHOLDER — write the high-confidence human label."
-    return "unsure", "PLACEHOLDER — write the unsure label."
+        return "human", LABEL_HUMAN
+    return "unsure", LABEL_UNSURE
+
+
+LABEL_HUMAN = (
+    "We think this was probably written by a person. "
+    "This is an automated estimate, not a final decision. If anything about "
+    "it looks wrong, you can ask for a person to review it."
+)
+
+LABEL_UNSURE = (
+    "We couldn't tell whether this was written by a person or with help from "
+    "an AI tool. This is not an accusation: plenty of people's own writing "
+    "lands here, and nothing has been decided against you. If you'd like a "
+    "person to take a look, you can ask for a review."
+)
+
+LABEL_AI = (
+    "Our system thinks this may have been written with help from an AI tool. "
+    "This is an automated estimate and it can be wrong, especially with plain "
+    "or simple writing. If you wrote this yourself, you can ask for a review "
+    "and a person will look at it."
+)
 
 
 def label_ranges() -> list[tuple[str, str]]:
