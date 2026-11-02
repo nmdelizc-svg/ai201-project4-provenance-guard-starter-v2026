@@ -51,12 +51,41 @@ def combine_signals(model_score: float, style_score: float) -> float:
 
     The weights in config.py are placeholders. Change them, or ignore them and
     write a different rule.
+
+    My rule:
+
+      1. Weighted average, 0.5 / 0.5 (config.WEIGHT_*).
+      2. If the signals **split** — one at or above 0.5, the other below, and
+         at least config.DISAGREEMENT_GAP apart — the average is clamped
+         inside the unsure band. Two methods pointing opposite ways is
+         uncertainty, so neither confident label is allowed. In particular,
+         one signal alone can never produce "ai".
+
+    Clamping rather than leaning toward the more-human signal is deliberate:
+    rare-word AI text reads as human to signal one, so leaning human on a
+    split would hand that text a confident "human" label.
+
+    What this can't do: when both signals are wrong *together* — plain human
+    writing, which both read as AI — there's no split to catch. That case is
+    left to the thresholds (Milestone 5).
     """
-    # TODO: replace this
-    return (
+    combined = (
         config.WEIGHT_MODEL_SIGNAL * model_score
         + config.WEIGHT_STYLE_SIGNAL * style_score
     )
+
+    if signals_split(model_score, style_score):
+        low = config.HUMAN_THRESHOLD + config.SPLIT_MARGIN
+        high = config.AI_THRESHOLD - config.SPLIT_MARGIN
+        combined = min(max(combined, low), high)
+
+    return round(min(max(combined, 0.0), 1.0), 4)
+
+
+def signals_split(model_score: float, style_score: float) -> bool:
+    """True when the two signals point opposite ways by at least the gap."""
+    opposite_sides = (model_score >= 0.5) != (style_score >= 0.5)
+    return opposite_sides and abs(model_score - style_score) >= config.DISAGREEMENT_GAP
 
 
 def score_to_label(score: float) -> tuple[str, str]:

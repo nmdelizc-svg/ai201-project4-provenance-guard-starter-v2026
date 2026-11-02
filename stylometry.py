@@ -33,6 +33,12 @@ anything together:
 import re
 import statistics
 
+# Window for the moving-average type-token ratio. See `type_token_ratio`.
+TTR_WINDOW = 50
+
+# ; : — – ( ) [ ] ? ! and a hyphen used as a dash (with a space either side).
+EXPRESSIVE_PUNCTUATION = re.compile(r"[;:—–()\[\]?!]|(?<=\s)-{1,2}(?=\s)")
+
 
 def sentences(text: str) -> list[str]:
     """Split into sentences. Rough and good enough — given to you."""
@@ -63,9 +69,17 @@ def sentence_length_spread(text: str) -> float:
     Watch the edge case: a one-sentence submission has no spread at all, and
     `stdev` raises on fewer than two values. Decide what that should return
     before the attack set decides for you.
+
+    My decision: the coefficient of variation (stdev / mean) of words per
+    sentence. Roughly 0.0–1.0 in practice; **higher means more human**. Fewer
+    than two sentences returns 0.0, and `style_signal` treats that case as "no
+    evidence" rather than "very even", so one long sentence isn't called AI.
     """
-    # TODO: replace this
-    return 0.0
+    lengths = [len(words(s)) for s in sentences(text)]
+    lengths = [n for n in lengths if n > 0]
+    if len(lengths) < 2:
+        return 0.0
+    return statistics.stdev(lengths) / statistics.mean(lengths)
 
 
 def type_token_ratio(text: str) -> float:
@@ -79,9 +93,23 @@ def type_token_ratio(text: str) -> float:
     longer, because common words repeat. Two texts of different lengths aren't
     directly comparable on it, and if your test inputs vary a lot in length,
     that alone can look like a signal.
+
+    My decision: to blunt that length effect, texts longer than
+    `TTR_WINDOW` words get a moving-average TTR — the plain ratio over every
+    window of that many words, averaged. A 60-word paragraph and a 300-word
+    essay are then measured on the same footing. Shorter texts get the plain
+    ratio. No words at all returns 0.0.
     """
-    # TODO: replace this
-    return 0.0
+    tokens = words(text)
+    if not tokens:
+        return 0.0
+    if len(tokens) <= TTR_WINDOW:
+        return len(set(tokens)) / len(tokens)
+    ratios = [
+        len(set(tokens[i:i + TTR_WINDOW])) / TTR_WINDOW
+        for i in range(len(tokens) - TTR_WINDOW + 1)
+    ]
+    return statistics.mean(ratios)
 
 
 def punctuation_density(text: str) -> float:
@@ -93,9 +121,18 @@ def punctuation_density(text: str) -> float:
         semicolons, dashes — is a real choice. Semicolons and em dashes are
         more interesting than full stops, because they vary more between
         writers.
+
+    My decision: only "expressive" marks count — semicolons, colons, dashes
+    (em, en, or a hyphen standing between spaces), brackets, question marks
+    and exclamation marks — per 100 words. Commas and full stops are left out:
+    every writer uses them. A hyphen inside a word ("well-known") is not a
+    dash and isn't counted. **Higher means more human.** No words returns 0.0.
     """
-    # TODO: replace this
-    return 0.0
+    total = len(words(text))
+    if total == 0:
+        return 0.0
+    marks = len(EXPRESSIVE_PUNCTUATION.findall(text))
+    return 100 * marks / total
 
 
 # ── Combining them ───────────────────────────────────────────────────────────
@@ -121,9 +158,49 @@ def style_signal(text: str) -> float:
     clearly human, plain conventional human writing, lightly-edited AI — before
     you trust it. Plain and ordinary, not formal: formal prose reads as *human*
     to signal one, and it is plain writing that gets accused.
+
+    My decisions:
+
+      1. All three raw measures point toward *human* as they rise, so all
+         three are flipped.
+      2. Each is mapped linearly onto 0–1 between two anchors (see `ANCHORS`)
+         and clipped: at or past the AI anchor scores 1.0, at or past the
+         human anchor scores 0.0. The anchors come from the raw values of the
+         calibration inputs, recorded in the README.
+      3. Weighted average: spread 0.4, punctuation 0.4, type-token ratio 0.2.
+         TTR gets less because on the calibration inputs it barely moved
+         (0.80–0.86) and didn't separate AI from human at all.
+
+    With fewer than two sentences there is no spread to measure, so that
+    component scores 0.5 ("no evidence") instead of 1.0.
     """
-    # TODO: replace this
-    return 0.5
+    parts = {
+        "spread": _scale(sentence_length_spread(text), *ANCHORS["spread"]),
+        "ttr": _scale(type_token_ratio(text), *ANCHORS["ttr"]),
+        "punctuation": _scale(punctuation_density(text), *ANCHORS["punctuation"]),
+    }
+    if len(sentences(text)) < 2:
+        parts["spread"] = 0.5
+
+    score = sum(STYLE_WEIGHTS[k] * v for k, v in parts.items())
+    return round(min(max(score, 0.0), 1.0), 4)
+
+
+# (AI anchor, human anchor) for each raw measure. A raw value at the AI anchor
+# scores 1.0, at the human anchor 0.0, linear in between, clipped outside.
+ANCHORS = {
+    "spread": (0.10, 0.70),        # stdev / mean of words per sentence
+    "ttr": (0.70, 0.90),           # moving-average type-token ratio
+    "punctuation": (0.0, 4.0),     # expressive marks per 100 words
+}
+
+STYLE_WEIGHTS = {"spread": 0.4, "ttr": 0.2, "punctuation": 0.4}
+
+
+def _scale(value: float, ai_anchor: float, human_anchor: float) -> float:
+    """Map a raw measure onto 0–1 where 1.0 is the AI end. Clipped."""
+    fraction = (value - ai_anchor) / (human_anchor - ai_anchor)
+    return 1.0 - min(max(fraction, 0.0), 1.0)
 
 
 if __name__ == "__main__":
@@ -139,4 +216,3 @@ if __name__ == "__main__":
     print(f"type_token_ratio         {type_token_ratio(text)}")
     print(f"punctuation_density      {punctuation_density(text)}")
     print(f"style_signal             {style_signal(text)}   (higher = more likely AI)")
-    print("\nAll zeros? These are stubs — Milestone 4 is where you build them.")

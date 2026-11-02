@@ -110,17 +110,76 @@ agree, and agree wrongly.
 <!-- Write the rule in words, then give the numbers. What happens when the two
      signals disagree? -->
 
-**The rule:**
+**The rule:** a weighted average of the two signals, except when they
+**split**. A split means one says AI (≥ 0.5), the other says human (< 0.5),
+and they are at least 0.30 apart. Two methods pointing opposite ways is
+uncertainty, so on a split the average is clamped inside the unsure band. No
+single signal can produce a confident label on its own, and that includes
+"ai".
 
-**The numbers:**
+I chose clamping over leaning toward the more human signal on purpose.
+Rare-word AI text reads as human to signal one, so leaning human would give
+that text a confident "human" label, which is an easy evasion.
+
+**The numbers** (all in `config.py`):
+
+| Setting | Value | Why |
+|---|---|---|
+| `WEIGHT_MODEL_SIGNAL` | 0.5 | Each signal has a blind spot the other lacks, and the calibration gave no reason to trust one more |
+| `WEIGHT_STYLE_SIGNAL` | 0.5 | Same |
+| `DISAGREEMENT_GAP` | 0.30 | Wide enough that small wobbles near 0.5 don't count as a split |
+| `SPLIT_MARGIN` | 0.01 | A split lands strictly inside the band, never on a threshold |
+| Split clamp | 0.36 – 0.64 | `HUMAN_THRESHOLD + margin` to `AI_THRESHOLD − margin`, so it follows the thresholds when Milestone 5 moves them |
+
+Inside signal two (`stylometry.py`), each raw measure is scaled linearly
+between an AI anchor (scores 1.0) and a human anchor (scores 0.0), then
+weighted:
+
+| Measure | AI anchor | Human anchor | Weight |
+|---|---|---|---|
+| Sentence-length spread (stdev / mean) | 0.10 | 0.70 | 0.4 |
+| Type-token ratio (moving average, 50-word window) | 0.70 | 0.90 | 0.2 |
+| Expressive punctuation per 100 words | 0.0 | 4.0 | 0.4 |
+
+TTR gets the smallest weight because it hardly moved across the calibration
+inputs (0.80–0.92) and didn't separate AI from human. A text with only one
+sentence scores 0.5 on spread ("no evidence").
 
 **Where it lives:** `scoring.py::combine_signals`
 
 <!-- ⚠️ The grader checks your code against that line. If your rule lives
      somewhere else, say where. -->
 
-**A case where my two signals split, and what my rule does with it:**
+**Calibration run.** Each input was written to sit in a known category, and
+both signals were printed separately:
 
+| Input | Model | Style | Combined | Notes |
+|---|---|---|---|---|
+| Clearly AI | 0.895 | 0.835 | **0.865** | Both agree: AI |
+| Clearly human | 0.411 | 0.087 | **0.249** | Both agree: human. 0.62 below clearly AI (criterion 2 asks for 0.30) |
+| Formal human (committee minutes) | 0.542 | 0.461 | **0.502** | Both sit near the middle, so it's unsure |
+| Lightly-edited AI | 0.709 | 0.582 | **0.646** | Contractions and a dash pulled style down. It sits just under 0.65 |
+| Plain human (second-language writer) | 0.836 | 0.810 | **0.823** | ⚠️ **Both wrong, together** |
+| Rare-word AI | 0.143 | 0.709 | **0.426** | **The split** (below) |
+
+The plain-human row is the false positive from PLAN.md §3, now measured. It
+scores almost as high as clearly-AI text, because short even sentences with
+no expressive punctuation look like AI to *both* signals. The signals agree,
+so the split rule can't catch it. That job falls to the thresholds in
+Milestone 5: with the AI threshold at 0.65 this writer would be accused.
+
+**A case where my two signals split, and what my rule does with it:**
+the rare-word AI paragraph ("Cartographic epistemologies invariably
+foreground the palimpsestic nature of territorial inscription…"). Signal one
+gives 0.143, because gpt2 can't predict words like "palimpsestic", so it
+looks human. Signal two gives 0.709: even sentence lengths and no
+punctuation beyond commas and full stops. They're on opposite sides of 0.5
+and 0.566 apart, so it's a split. Here the average (0.426) already falls
+inside the 0.36–0.64 band, so the clamp leaves it alone and it reads
+"unsure", which is the honest answer. The clamp matters when a split
+averages outside the band. Model 0.95 with style 0.45 averages 0.70, which a
+plain average would label "ai" on one signal's word. My rule holds it at
+0.64.
 
 
 ---
@@ -159,8 +218,8 @@ agree, and agree wrongly.
      two off the response, so leaving them out costs you next unit's
      diagnostics. -->
 
-*Milestone 3: one signal wired in. `confidence` and `label` are placeholders
-and `style_score` is `null` until Milestones 4 and 5.*
+*Milestone 4: both signals and the combined score (`confidence`) are real.
+`guess` and `label` are placeholders until Milestone 5.*
 
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
@@ -170,14 +229,14 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 
 ```json
 {
-  "confidence": null,
-  "content_id": "97fdecf4-3166-44ae-83b8-fedd636f7166",
+  "confidence": 0.8706,
+  "content_id": "5fc28325-5f5d-4f41-aa43-fb182a0ffbe1",
   "creator_id": "nancy",
   "guess": "unsure",
   "label": "placeholder",
   "model_score": 0.9207,
   "status": "decided",
-  "style_score": null
+  "style_score": 0.8206
 }
 ```
 
@@ -189,14 +248,14 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 
 ```json
 {
-  "confidence": null,
-  "content_id": "7a59b001-2e4a-4f4d-82d6-43db82ee1697",
+  "confidence": 0.3931,
+  "content_id": "d652551d-e0e3-4615-bb31-4ef482306d85",
   "creator_id": "nancy",
   "guess": "unsure",
   "label": "placeholder",
   "model_score": 0.3229,
   "status": "decided",
-  "style_score": null
+  "style_score": 0.4633
 }
 ```
 
@@ -236,33 +295,33 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
   "count": 3,
   "entries": [
     {
-      "combined_score": null,
-      "content_id": "97fdecf4-3166-44ae-83b8-fedd636f7166",
+      "combined_score": 0.8706,
+      "content_id": "5fc28325-5f5d-4f41-aa43-fb182a0ffbe1",
       "creator_id": "nancy",
       "guess": "unsure",
       "label": "placeholder",
       "model_score": 0.9207,
       "status": "decided",
-      "style_score": null,
-      "timestamp": "2026-11-02T16:07:54+00:00"
+      "style_score": 0.8206,
+      "timestamp": "2026-11-02T17:06:37+00:00"
     },
     {
-      "combined_score": null,
-      "content_id": "7a59b001-2e4a-4f4d-82d6-43db82ee1697",
+      "combined_score": 0.3931,
+      "content_id": "d652551d-e0e3-4615-bb31-4ef482306d85",
       "creator_id": "nancy",
       "guess": "unsure",
       "label": "placeholder",
       "model_score": 0.3229,
       "status": "decided",
-      "style_score": null,
-      "timestamp": "2026-11-02T16:07:55+00:00"
+      "style_score": 0.4633,
+      "timestamp": "2026-11-02T17:06:37+00:00"
     },
     {
       "creator_id": "nancy",
       "event": "rejected",
       "reason": "missing_text",
       "status": "rejected",
-      "timestamp": "2026-11-02T16:07:55+00:00"
+      "timestamp": "2026-11-02T17:06:46+00:00"
     }
   ]
 }

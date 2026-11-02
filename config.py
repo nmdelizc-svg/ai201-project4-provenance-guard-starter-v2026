@@ -50,12 +50,23 @@ DETECTOR_MAX_TOKENS = 400
 # ─── Scoring (Milestone 4) ───────────────────────────────────────────────────
 # How much each signal counts toward the combined score.
 #
-# ⚠️ These are placeholders. Milestone 4 asks you to write your combining rule
-# down BEFORE you code it, and to put the numbers in your README. Whatever you
-# decide, it goes here.
+# The rule (README, "The combining rule"): a weighted average, except when the
+# two signals split — one says AI (>= 0.5), the other says human (< 0.5), and
+# they're at least DISAGREEMENT_GAP apart. A split is uncertainty, so the score
+# is clamped inside the unsure band and can't produce either confident label.
+#
+# Equal weights: each signal has a blind spot the other doesn't (rare words
+# fool signal one, cheap shape edits fool signal two), and the calibration
+# inputs gave no reason to trust one over the other.
 
 WEIGHT_MODEL_SIGNAL = 0.5
 WEIGHT_STYLE_SIGNAL = 0.5
+
+DISAGREEMENT_GAP = 0.30
+
+# How far inside the unsure band a split lands, so it never sits exactly on a
+# threshold (score_to_label treats the thresholds themselves as confident).
+SPLIT_MARGIN = 0.01
 
 
 # ─── Thresholds (Milestone 5) ────────────────────────────────────────────────
