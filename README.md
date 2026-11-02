@@ -39,6 +39,27 @@
 <!-- The path a submission takes, from arriving to the label a reader sees.
      Six or seven steps — this is the trace you wrote in Milestone 1. -->
 
+1. **The route (`app.py::submit`)** receives JSON and checks it: `text` and
+   `creator_id` present, and the text neither too short nor too long. Bad
+   input is logged as a rejection and gets a 4xx. Good input is given a
+   `content_id`.
+2. **Signal one (`detector.model_signal`)** runs gpt2 locally and measures
+   how predictable the text is, which adds `model_score`.
+3. **Signal two (`stylometry.style_signal`)** measures the text's shape
+   (sentence-length spread, vocabulary variety, punctuation), which adds
+   `style_score`.
+4. **The combining rule (`scoring.combine_signals`)** turns the two into one
+   score, which is returned as `confidence`.
+5. **The label mapping (`scoring.score_to_label`)** turns that score into a
+   `guess` and the sentence a reader sees.
+6. **The audit log (`audit.log_decision`)** records all nine fields with
+   status `decided`.
+7. **The response** returns the label, both signal scores and the
+   `content_id` a writer needs to appeal. `POST /appeal` with that id moves
+   the item to `under_review`.
+
+The full plan is in [PLAN.md](PLAN.md): the false-positive trace and both
+endpoint contracts field by field.
 
 
 ---
@@ -53,19 +74,36 @@
 
 ### Signal one — the model signal
 
-**What it measures:**
+**What it measures:** how predictable the text is to gpt2 (its perplexity),
+mapped to 0–1. Low perplexity gives a high score, meaning more likely AI.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** a model writes by
+picking a likely next word, so its output is easy for a model to predict.
+People make odder word choices and change direction more.
 
-**What it can't see:**
+**What it can't see:** authorship. Plain human writing in short sentences
+with common words (a second-language writer, a younger writer, anyone writing
+simply) scores as AI. AI text full of rare words scores as human. It also
+only reads roughly the first 300 words (400 tokens), so whatever comes after
+that is invisible to it.
 
 ### Signal two — the style signal
 
-**What it measures:**
+**What it measures:** the shape of the text without reading it. It combines
+sentence-length spread (std / mean), type-token ratio, and the density of
+"expressive" punctuation (semicolons, dashes, brackets, colons, ? and !).
+Each is scaled to 0–1, with higher meaning more likely AI.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** generated prose
+tends toward even, mid-length sentences, a narrower vocabulary and safe
+punctuation. Human writing is lumpier.
 
-**What it can't see:**
+**What it can't see:** meaning. Typos, split sentences, added dashes or a
+pasted quotation all move it without changing what the text says. Type-token
+ratio also falls as text gets longer, and lists, poems and dialogue break the
+sentence splitter. Like signal one, it reads plain, even writing as AI. The
+two signals share that blind spot, so when the writer is plain-spoken they
+agree, and agree wrongly.
 
 ### The combining rule
 
