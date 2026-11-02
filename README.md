@@ -145,7 +145,9 @@ TTR gets the smallest weight because it hardly moved across the calibration
 inputs (0.80–0.92) and didn't separate AI from human. A text with only one
 sentence scores 0.5 on spread ("no evidence").
 
-**Where it lives:** `scoring.py::combine_signals`
+**Where it lives:** `scoring.py::combine_signals`. It calls
+`scoring.py::signals_split` to decide whether the two signals split, and
+reads every number from `config.py`.
 
 <!-- ⚠️ The grader checks your code against that line. If your rule lives
      somewhere else, say where. -->
