@@ -30,6 +30,7 @@ from flask import Flask, jsonify, request
 
 import audit
 import config
+import detector
 
 app = Flask(__name__)
 
@@ -199,17 +200,59 @@ def submit():
     what should this do when `text` is missing, empty, or enormous? A crash on
     a malformed input is one of the most common real failures there is.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return _reject("unknown", "invalid_json", "Send a JSON object with text and creator_id.")
 
-    # TODO: delete this and build the route.
+    text = payload.get("text")
+    creator_id = payload.get("creator_id")
+    if not isinstance(creator_id, str) or not creator_id.strip():
+        return _reject("unknown", "missing_creator_id", "creator_id is required.")
+    creator_id = creator_id.strip()
+    if not isinstance(text, str):
+        return _reject(creator_id, "missing_text", "text is required and must be a string.")
+    if not text.strip():
+        return _reject(creator_id, "empty_text", "text can't be empty.")
+
+    try:
+        model_score = detector.model_signal(text)
+    except ValueError as exc:
+        return _reject(creator_id, "text_too_short", str(exc), 422)
+    except detector.DetectorUnavailable:
+        return _reject(creator_id, "detector_unavailable", "The detector model couldn't load. Try again shortly.", 503)
+
+    content_id = str(uuid.uuid4())
+    # Milestone 3: one real signal. confidence, label and guess are placeholders
+    # until the style signal (M4) and the label mapping (M5) exist.
+    guess = "unsure"
+    confidence = None
+    label = "placeholder"
+
+    entry = audit.log_decision(
+        content_id=content_id,
+        creator_id=creator_id,
+        guess=guess,
+        model_score=model_score,
+        label=label,
+        status="decided",
+    )
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /submit isn't built yet — see the TODO in app.py.",
-        "you_sent": {
-            "text_length": len(payload.get("text", "")),
-            "creator_id": payload.get("creator_id"),
-        },
-    }), 501
+        "content_id": content_id,
+        "creator_id": creator_id,
+        "guess": guess,
+        "confidence": confidence,
+        "label": label,
+        "model_score": model_score,
+        "style_score": None,
+        "status": entry["status"],
+    })
+
+
+def _reject(creator_id, error, message, status=400):
+    """Log a refused submission and answer with the contract's error shape."""
+    audit.log_rejection(creator_id=creator_id, reason=error)
+    return jsonify({"error": error, "message": message}), status
 
 
 @app.post("/appeal")

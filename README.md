@@ -159,15 +159,59 @@ agree, and agree wrongly.
      two off the response, so leaving them out costs you next unit's
      diagnostics. -->
 
+*Milestone 3: one signal wired in. `confidence` and `label` are placeholders
+and `style_score` is `null` until Milestones 4 and 5.*
+
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "...", "creator_id": "..."}'
+  -d '{"text": "Artificial intelligence has become an increasingly important part of modern society. It is used in a wide variety of applications, including healthcare, finance, and education. Additionally, AI systems can help organizations improve efficiency and make better decisions. However, it is important to consider the ethical implications of these technologies.", "creator_id": "nancy"}'
 ```
 
 ```json
-
+{
+  "confidence": null,
+  "content_id": "97fdecf4-3166-44ae-83b8-fedd636f7166",
+  "creator_id": "nancy",
+  "guess": "unsure",
+  "label": "placeholder",
+  "model_score": 0.9207,
+  "status": "decided",
+  "style_score": null
+}
 ```
+
+```bash
+$ curl -X POST http://127.0.0.1:5000/submit \
+  -H "Content-Type: application/json" \
+  -d '{"text": "My grandmother kept her buttons in a Danish cookie tin, the blue one, and when I was six I swallowed a brass one shaped like an anchor. Nobody panicked. She just handed me a slice of white bread, told me to chew slow, and went back to her crossword.", "creator_id": "nancy"}'
+```
+
+```json
+{
+  "confidence": null,
+  "content_id": "7a59b001-2e4a-4f4d-82d6-43db82ee1697",
+  "creator_id": "nancy",
+  "guess": "unsure",
+  "label": "placeholder",
+  "model_score": 0.3229,
+  "status": "decided",
+  "style_score": null
+}
+```
+
+A request with no `text` is refused and logged rather than crashing:
+
+```bash
+$ curl -X POST http://127.0.0.1:5000/submit \
+  -H "Content-Type: application/json" \
+  -d '{"creator_id": "nancy"}'
+```
+
+```json
+{"error": "missing_text", "message": "text is required and must be a string."}
+```
+*(HTTP 400)*
 
 **An appeal**
 
@@ -188,7 +232,40 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 ```
 
 ```json
-
+{
+  "count": 3,
+  "entries": [
+    {
+      "combined_score": null,
+      "content_id": "97fdecf4-3166-44ae-83b8-fedd636f7166",
+      "creator_id": "nancy",
+      "guess": "unsure",
+      "label": "placeholder",
+      "model_score": 0.9207,
+      "status": "decided",
+      "style_score": null,
+      "timestamp": "2026-11-02T16:07:54+00:00"
+    },
+    {
+      "combined_score": null,
+      "content_id": "7a59b001-2e4a-4f4d-82d6-43db82ee1697",
+      "creator_id": "nancy",
+      "guess": "unsure",
+      "label": "placeholder",
+      "model_score": 0.3229,
+      "status": "decided",
+      "style_score": null,
+      "timestamp": "2026-11-02T16:07:55+00:00"
+    },
+    {
+      "creator_id": "nancy",
+      "event": "rejected",
+      "reason": "missing_text",
+      "status": "rejected",
+      "timestamp": "2026-11-02T16:07:55+00:00"
+    }
+  ]
+}
 ```
 
 ---
