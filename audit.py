@@ -112,7 +112,17 @@ def log_rejection(creator_id: str, reason: str, **extra) -> dict:
     })
 
 
+REQUIRED_FIELDS = (
+    "timestamp", "content_id", "creator_id", "guess",
+    "model_score", "style_score", "combined_score", "label", "status",
+)
+
+
 def _append(entry: dict) -> dict:
+    # Every line carries all nine fields, so appeals and rejections have the
+    # same shape as decisions. A field that doesn't apply is an explicit null,
+    # never a missing key.
+    entry = {**{field: None for field in REQUIRED_FIELDS}, **entry}
     config.LOG_DIR.mkdir(parents=True, exist_ok=True)
     line = json.dumps(entry, ensure_ascii=False)
     with _lock:

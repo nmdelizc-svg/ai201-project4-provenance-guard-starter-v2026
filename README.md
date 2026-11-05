@@ -447,25 +447,22 @@ $ curl "http://127.0.0.1:5000/log?limit=6"
 
 ## Rate Limiting
 
-**My limits:** ___ per minute, ___ per day
+**My limits:** 5 per minute, 50 per day
 
 **Why those numbers and not others:**
-<!-- Think about two people: a real writer submitting their own work a few
-     times an hour, and a script sending a thousand variations to map your
-     thresholds. Your numbers have to be liveable for the first and hostile to
-     the second. -->
+A real writer checks their own work a few times an hour: they paste a draft, maybe fix something and send it again. Five a minute leaves room for that kind of quick back-and-forth, and fifty a day is more than anyone needs to check their own writing. A script trying to map my thresholds needs hundreds of variations. At 5 a minute it can't send them in a burst, and at 50 a day a 1,000-variation run takes 20 days per creator_id. Ten a minute and 200 a day (the starter's defaults) would let that same script finish in five days.
 
-**What a caller counts as:** <!-- per address, or per creator_id? They fail
-differently — one script can look like a thousand callers, and one household
-can look like one. -->
+**What a caller counts as:** Per `creator_id`, falling back to the caller's address when there isn't one. That way people who share a network (a household or a classroom) don't use up each other's limit. The weakness is that `creator_id` is whatever the caller sends, so a script can make up a new one for every request and never hit the limit. Per-address limiting would stop that script, but it would also lump a whole household together. A real deployment would need verified accounts, or both limits together.
 
 **The run of status codes when I pushed past it:**
 
 <!-- python run_attacks.py --flood 15 -->
 
 ```
-
+200 200 200 200 200 429 429 429 429 429 429 429 429 429 429
 ```
+
+Each of the ten 429s left a `rejected` entry in `logs/audit.jsonl` with `reason: "rate_limited"` and `limit: "5 per 1 minute"`. Every log line, including appeals and rejections, has all nine fields (`timestamp, content_id, creator_id, guess, model_score, style_score, combined_score, label, status`). Fields that don't apply are written as `null`, never left out.
 
 ---
 
