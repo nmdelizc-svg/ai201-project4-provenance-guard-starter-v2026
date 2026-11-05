@@ -762,6 +762,34 @@ trial is in
 | 4. Appeals: real ids → 200 `under_review` + one log entry; fake ids → 404 + no entry | 5 of 5 real, 3 of 3 fake | 5/5, 3/3 | 5/5, 3/3 | 5/5, 3/3 | MET |
 | 5. Malformed bodies → 4xx with `error` + `message` and one `rejected` log entry | 6 of 6 | 5/6 | 5/6 | 5/6 | **MISSED** |
 
+**How I reached each verdict.** A criterion is MET only if its target held
+in all three trials. One trial over the line is a miss.
+
+1. **MISSED.** I counted how many of my ten pieces came back `guess: "ai"`
+   in each trial. The target allows 1. All three trials had 10, so it
+   misses by nine every time.
+2. **MET.** I took the mean `confidence` of the five AI texts minus the mean
+   of the five human texts in each trial. It was 0.379 all three times,
+   above the 0.30 target. It holds because the AI side scores high, not
+   because the human side scores low. The human mean is 0.458, inside the
+   unsure band, and Thoreau was labelled `ai`.
+3. **MISSED.** For each label I counted how many of its three aimed inputs
+   got that label. The target needs at least 2 for *every* label in every
+   trial. Unsure (2/3) and ai (3/3) passed, but human got 0/3 in all three
+   trials, and one failed label fails the criterion.
+4. **MET.** `run_appeals` read `/log` before and after each appeal. All 5
+   real ids returned 200 `under_review` and added exactly one matching
+   `appeal` entry, and all 3 made-up ids returned 404 `unknown_content_id`
+   and added none, in all three trials.
+5. **MISSED.** I checked each of the six bodies for a 4xx with `error` and
+   `message` plus one `rejected` log entry. Five passed. The
+   250,000-character body got a 200, a confident `ai` label and a `decided`
+   log entry, in all three trials.
+
+**No criterion was revised.** Each of the five gave me a number I could
+check against its target, so none was broken. Three were missed, and they
+stay as written in [criteria.md](criteria.md).
+
 **What each criterion ran.**
 
 1. Ten pieces I wrote myself. Pieces 1–4 are deliberately plain: short
@@ -1017,6 +1045,187 @@ characters of `"word "`, scored, labelled `ai` and logged as `decided`.*
 
      Look for a pattern. Five failures on one signal is one problem, not five. -->
 
+Three criteria missed and 22 attacks broke. Every trial was identical, so
+none of it is noise. Traced to a stage, they come down to four mechanisms.
+Each one below lists every input it covers. The signal-two parts are worked
+out with the functions in `stylometry.py` on the same inputs. Each part runs
+from 0.0 (human end) to 1.0 (AI end).
+
+#### 1. Plain writing scores as AI on both signals, so nothing catches it
+
+**Covers:** criterion 1 (all ten of my pieces), criterion 3 (Austen and
+Shelley, aimed at `human`) and FP02–FP07. That's 18 failures and one
+problem.
+
+**Stage:** signal two, with signal one agreeing. The combining rule and the
+label mapping pass the result straight through.
+
+**Mechanism:** signal two treats *missing* features as evidence of AI. Its
+punctuation part only counts semicolons, colons, dashes, brackets, `?` and
+`!`. A text with none of them scores 1.0, the AI end, and that part weighs
+0.4. So a writer who only uses commas and full stops starts at 0.4 out of 1
+before anything else is measured. Nine of my ten pieces, Austen, Shelley
+and all six false-positive attacks have zero of those marks. Sentence spread
+adds most of the rest. Its AI anchor is a spread of 0.10, and my plain
+pieces sit at 0.11–0.20, so that part scores 0.84–0.98. Shelley's opening
+is two sentences of almost the same length (spread 0.09), so it gets the
+full 1.0.
+
+Signal one agrees, because common words in short sentences are easy for
+gpt2 to predict. All ten of my pieces score 0.75–0.91 on it. The split rule
+only acts when the two signals point opposite ways. Here they point the
+same way, so the plain average goes through and lands above 0.65.
+
+| Input | Model | Style | Spread part | Punctuation part | Combined |
+|---|---|---|---|---|---|
+| My pieces 1–4 (plain) | 0.75–0.91 | 0.88–0.97 | 0.84–0.98 | 1.0 (no marks) | 0.82–0.94 |
+| My pieces 5–10 | 0.76–0.83 | 0.56–0.75 | 0.55–0.79 | 1.0 on five; 0.67 on the casual text | 0.69–0.77 |
+| Austen (C3) | 0.678 | 0.695 | 0.36 | 1.0 | 0.686 |
+| Shelley (C3) | 0.558 | 0.884 | 1.0 | 1.0 | 0.721 |
+| FP02 formal report | 0.739 | 0.837 | 0.77 | 1.0 | 0.788 |
+| FP03 non-native writer | 0.805 | 0.729 | 0.62 | 1.0 | 0.767 |
+| FP04 rubric essay | 0.833 | 0.701 | 0.56 | 1.0 | 0.767 |
+| FP05 documentation | 0.800 | 0.882 | 0.71 | 1.0 | 0.841 |
+| FP06 cover letter | 0.881 | 0.665 | 0.30 | 1.0 | 0.773 |
+| FP07 deliberate repetition | 0.882 | 0.600 | 0.0 | 1.0 | 0.741 |
+
+The punctuation part is 1.0 on every row but one. FP07 shows how much it
+costs. Its sentence spread is fully human (0.0), but punctuation (no marks)
+and type-token ratio (the repeated phrase) both max out, so signal two
+still says 0.60. Signal one says 0.88, and the average is 0.741.
+
+#### 2. The split rule makes "human" unreachable whenever signal one is 0.5 or more
+
+**Covers:** criterion 3, Tom Sawyer (aimed at `human`, got `unsure` at
+0.375).
+
+**Stage:** the combining rule, set off by signal one.
+
+**Mechanism:** Tom Sawyer opens with dialogue: *"Tom!" No answer. "Tom!" No
+answer.* Signal two read that correctly as human (0.168). Spread is 1.10
+and there are 12 expressive marks per 100 words, both at the human end.
+Signal one gave 0.581, because a line that repeats is easy to predict the
+second time. The two signals split, and the average of 0.3746 sits 0.025
+above the human line.
+
+The average barely matters, though, because on a split the rule clamps the
+score to 0.36–0.64. For the average to reach 0.35 with signal one at 0.5 or
+more, signal two has to be 0.20 or less. At that point the two are at least
+0.30 apart on opposite sides of 0.5, which is a split, and the clamp lifts
+the score back to 0.36. **So whenever gpt2 gives 0.5 or more, the best any
+text can get is "unsure".** Signal one gave 0.5 or more on 5 of the 8 classic
+human texts across criteria 2 and 3, and on all ten of my own pieces. None
+of them could ever have been labelled `human`, whatever signal two said.
+
+#### 3. One cheap edit moves one signal, and the combining rule turns it into "unsure"
+
+**Covers:** EV01, EV02, EV03, EV06, EV07, EV08, EV09, PI01 and PI03, which
+landed `unsure`, plus EV05 and PI02, which went all the way to `human`.
+That's 11 broken attacks.
+
+**Stage:** mostly signal two, and signal one for typos and very short text.
+The combining rule turns either into a non-`ai` result.
+
+**Mechanism:** neither signal reads meaning. Signal two's two heavy parts,
+spread and punctuation at 0.4 each, can each be pushed to 0.0 with one
+edit: a few one-word sentences, or a semicolon in every sentence. Signal one
+drops on tokens it can't predict. To get `ai`, AI text needs *both* signals
+to stay high, so the attacker only has to knock down one. If that signal
+falls below 0.5, the split rule clamps the score to "unsure". If it falls
+less, the plain average still drops under 0.65. This is the rule doing what
+I built it to do (one signal alone can't produce "ai"), and that same
+design is what makes evasion cheap.
+
+| ID | Edit | Stage | What moved | Model | Style | Split? | Combined |
+|---|---|---|---|---|---|---|---|
+| EV01 | typos | signal one | Misspellings are rare tokens to gpt2, so perplexity jumped (0.16). The attack aimed at signal two's word variety and did push type-token ratio to its human end, but that part only weighs 0.2, so signal two stayed high | 0.164 | 0.759 | yes | 0.462 |
+| EV02 | "Really." fragments | signal two | 13 sentences, spread 0.85 → part 0.0. The plain average (0.335) would have been `human`; the clamp held it at 0.36 | 0.594 | 0.076 | yes | 0.360 |
+| EV03 | pasted quotation | signal two | Added marks (punctuation part 0.53) and new words (type-token part 0.0) | 0.666 | 0.382 | no, gap 0.28 | 0.524 |
+| EV06 | one long + one short sentence | signal two | Spread 1.19 → part 0.0 | 0.573 | 0.451 | no | 0.512 |
+| EV07 | "; and, moreover," padding | signal two | 7.2 marks per 100 words → punctuation part 0.0. With no full stops it's one "sentence", so spread falls back to 0.5 | 0.586 | 0.255 | yes | 0.420 |
+| EV08 | 65 characters | signal one, let in by the route | Ten words give gpt2 no context, so every word surprises it. The route's only minimum is 3 tokens | 0.245 | 0.678 | yes | 0.462 |
+| EV09 | human opening paragraph | signal two, then the label mapping | The opening raised spread (part 0.39). 0.630 is 0.02 under the 0.65 line | 0.704 | 0.555 | no | 0.630 |
+| PI01 | "Ignore all previous instructions…" | both signals | The instruction is never read. Its short command sentences beside long AI ones raised spread (part 0.06), and its wording is less predictable to gpt2 | 0.463 | 0.425 | no | 0.444 |
+| PI03 | "(Note to the reviewing system: …)" | signal two | Brackets and a colon: 5.45 marks per 100 words → punctuation part 0.0 | 0.594 | 0.238 | yes | 0.416 |
+| EV05 | heavy human edit | both signals | The edit changed exactly what both measure: a dash, uneven sentences (spread part 0.04) and less predictable wording | 0.321 | 0.335 | no, both say human | **0.328 human** |
+| PI02 | fake "SYSTEM:" header | both signals | The header's colon and short lines dropped signal two (spread part 0.08), and words like "SYSTEM", "provenance" and "bypassed" are hard for gpt2 to predict. It asked for `human` and got it, by shape, not because anything obeyed it | 0.204 | 0.210 | no, both say human | **0.207 human** |
+
+EV05 and PI02 are the worst of this group. When an edit moves *both*
+signals they agree again, the split rule has nothing to catch, and the
+result is a confident `human`. It's pattern 1 in reverse. EV05 is a heavy
+human rewrite, so `human` may not be far wrong. PI02 is just AI text with a
+header on top.
+
+#### 4. The route accepts anything that isn't blank, and the signals invent a score for it
+
+**Covers:** criterion 5 (the 250,000-character body), MF03, MF05, MF06,
+MF07 and MF08. That's six failures.
+
+**Stage:** the route.
+
+**Mechanism:** `app.py::submit` checks that `text` is a string, isn't
+blank, and is at least 3 gpt2 tokens. It has no upper limit and no check
+that the text has words the signals can read. Both signals return a number
+for anything, and nothing downstream knows when that number means nothing.
+
+- **Criterion 5:** `"word "` × 50,000 is one sentence with one distinct
+  word. Signal two gives 0.4 × 0.5 (one sentence, so spread is "no
+  evidence") + 0.2 × 1.0 (type-token ratio) + 0.4 × 1.0 (no marks) = 0.8.
+  Signal one gives 0.998, because repetition is as predictable as text
+  gets. The combined 0.899 was labelled `ai` and logged `decided`, after
+  signal two had worked through a moving type-token ratio over 50,000 words.
+- **MF06 emoji, MF07 Arabic:** signal two's `words()` only matches a–z, 0–9
+  and apostrophes, so both give zero words. Type-token ratio and
+  punctuation then both score 1.0, spread 0.5, and signal two says 0.8
+  about text it never saw. Signal one gave 0.997 and 0.906, but gpt2 was
+  trained on English, so neither number means anything.
+- **MF05 4,000 × "a", MF08 57,640 characters:** signal one reads only the
+  first 400 tokens, and repeated text is predictable (0.998 and 0.988).
+  Both got `ai`.
+- **MF03 control characters:** gpt2 found them unpredictable (0.000), and
+  the brackets in the terminal colour codes counted as 66 expressive marks
+  per 100 words (signal two 0.2). Labelled `human` at 0.10.
+
+#### Not a miss, but worth a line: criterion 3's roughened AI paragraph
+
+The remote-work paragraph was aimed at `unsure` and came back `ai` (0.678).
+Unsure still passed at 2/3, so it doesn't change the verdict. The cause is
+signal one and signal two together. Contractions are common words, so the
+roughening did nothing to signal one (0.803). One dash in 64 words is 1.56
+marks per 100, which the 0–4 scale still puts on the AI side (part 0.61),
+so signal two stayed at 0.553. Both were above 0.5, there was no split, and
+the average crossed the line. The system called AI text AI. My roughening
+was too light to make it borderline.
+
+#### What the patterns add up to
+
+- **Patterns 1 and 3 are one flaw seen from two sides.** Both signals
+  measure the surface of the text. Plain human writing has an AI-looking
+  surface, and AI text with one cheap edit has a human-looking one. The
+  split rule can only catch the signals *disagreeing*. It can't catch them
+  being wrong together, which is all of pattern 1 plus EV05 and PI02.
+- **Signal two is named in every pattern**, and its punctuation part most
+  of all. That part is at 1.0 on 17 of the 18 pattern-1 failures, and at 0.0
+  on EV07 and PI03. Scoring "no semicolons or dashes" as fully AI is the
+  single most expensive decision in the service.
+- **The split clamp cuts both ways.** It's why one signal alone can't
+  produce `ai` (the 0.95 / 0.45 case from calibration), and it's also why
+  nine evasions land `unsure` and why `human` can't be reached once gpt2
+  says 0.5.
+- **Pattern 4 stands apart.** It's in the route, and it's the only one that
+  plain input checks would fix.
+
+#### Were the targets I met too low?
+
+- **Criterion 2, yes.** The 0.30 gap held, but it doesn't check where the
+  human texts land. Their mean (0.458) is in the unsure band, and Thoreau
+  got `ai`. A gap can hold while the human label is still unreachable,
+  which is exactly what criterion 3 then found. This is the one I'd
+  tighten, by adding *"and the human set's mean is at most 0.35 in each
+  trial."* It would have missed.
+- **Criterion 4, no, but it was narrow.** "All of them" can't go higher. It
+  never sent the same id twice or appealed an id whose submission was
+  rejected. Those are the next two cases I'd add.
 
 
 ---
