@@ -83,7 +83,11 @@ SPLIT_MARGIN = 0.01
 # that decide who pays for it.
 
 HUMAN_THRESHOLD = 0.35
-AI_THRESHOLD = 0.65
+# Unit 8 improvement: raised from 0.65. The before run labelled all ten of my
+# own pieces and six of eight false-positive attacks "ai" at 0.69–0.94, while
+# clear AI text scored 0.79–0.88. A wrong accusation costs more than a miss,
+# so the unsure band widens upward. The split clamp follows (0.36–0.79).
+AI_THRESHOLD = 0.80
 
 # ⚠️ One thing that catches people out in Milestone 5. A weighted average can
 # only land between its two inputs — so while `style_signal` is still the stub
