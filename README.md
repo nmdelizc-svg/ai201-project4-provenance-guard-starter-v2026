@@ -430,19 +430,9 @@ $ curl "http://127.0.0.1:5000/log?limit=6"
 
 ## How I Used AI
 
-**Moment 1**
+I used AI as a way to verify my decisions and confirm that the logic behind my analysis was consistent. One example was the comparison of the before-and-after results in the evaluation process (commit ebaf2ba). I used AI to help check my reasoning around the comparison of the model, style, and combined scores across all 35 scored attacks. This helped confirm that the results remained unchanged to four decimal places and that my interpretation of the comparison was accurate. Rather than relying only on visual inspection, I used this verification process to strengthen the reliability of my conclusions.
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
-
-**Moment 2**
-
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
-
-<!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
+Another area where I used AI was when reviewing the signal-two breakdowns and the reasoning behind the punctuation experiment. I used it to help verify that the calculations, such as the spread and punctuation contributions, were consistent with the functions in stylometry.py. I also checked the logic behind setting punctuation to 0.5 in the offline experiment to understand whether the resulting classifications supported my conclusions. AI served as a secondary check on my decisions and mathematical reasoning, helping me identify inconsistencies and confirm that the explanations I provided were supported by the underlying code and results. I remained responsible for interpreting the findings and making the final decisions.
 
 ---
 
@@ -456,7 +446,7 @@ A real writer checks their own work a few times an hour: they paste a draft, may
 **What a caller counts as:** Per `creator_id`, falling back to the caller's address when there isn't one. That way people who share a network (a household or a classroom) don't use up each other's limit. The weakness is that `creator_id` is whatever the caller sends, so a script can make up a new one for every request and never hit the limit. Per-address limiting would stop that script, but it would also lump a whole household together. A real deployment would need verified accounts, or both limits together.
 
 **The run of status codes when I pushed past it:**
-
+ 
 <!-- python run_attacks.py --flood 15 -->
 
 ```
@@ -1481,6 +1471,123 @@ the only thing that could have moved them.
 
 <!-- For each attack still getting through and each criterion still missed:
      what you'd do, and why you stopped. -->
+
+After the improvement, 17 attacks still break and criteria 1, 3 and 5 are
+still missed. They fall into the same four patterns as the diagnoses, so I've
+grouped them that way. Every item from the after run is in one of the groups
+below.
+
+One reason applies to all of them: the unit asks for **one** improvement, so
+the before and after runs can be compared and any change traced to it. I
+kept it to one setting so that every label that moved could be pinned on the
+threshold (and it could: every score was identical). Each fix below would
+have been a second change in the same run.
+
+#### 1. The route still accepts junk: MF03, MF06, MF07, MF08 and criterion 5
+
+**What I'd do:** this is the next change I'd make, and the cheapest. In
+`app.py::submit`, before either signal runs:
+
+- Reject `text` over a maximum length (for example 20,000 characters) with a
+  `413` or `422`, `error: "text_too_long"`, and a `rejected` log entry. That
+  fixes criterion 5 (the 250,000-character body) and MF08.
+- Reject text where fewer than about half the characters are letters a–z, or
+  that has fewer than ~10 words that `stylometry.words()` can read, with
+  `422 unscorable_text`. That covers MF06 (emoji), MF07 (Arabic) and MF03
+  (control characters). For MF07 the honest message is "we can only check
+  English", not a label.
+
+**Why I stopped:** it's a route change, not a scoring change, and I'd
+already used my one improvement on the error that hurts people (wrong
+accusations). Junk input getting a label is embarrassing, but nobody is
+accused by it except whoever sent the emoji.
+
+#### 2. Plain writing still scores as AI: FP05 and criterion 1 (my pieces 1–4)
+
+**What I'd do:** fix signal two's punctuation part so that *no* expressive
+marks counts as "no evidence" (0.5), not as fully AI (1.0). Then re-check
+whether 0.80 is still the right line with the new scores.
+
+**Why I stopped:** I tested this offline (see *The Improvement*) and on its
+own it only took my writing from 10 accusations to 7, and FP03 stayed
+accused. The real problem is that signal one also scores plain writing at
+0.75–0.91, and my plainest pieces score *higher* than most clear AI text
+(0.82–0.94 against 0.79–0.88). No line and no reweighting of these two
+signals separates them. Fixing it properly needs a signal that measures
+something other than surface predictability, which is a new signal, not a
+tune-up. FP05 (human documentation at 0.841) is the same case.
+
+#### 3. "Human" is still unreachable: criterion 3 (human 0/3)
+
+**What I'd do:** change the split clamp so it only caps the top. On a split
+the score could still never reach "ai", but a low average would be allowed
+down to "human" instead of being lifted to 0.36. Tom Sawyer (average 0.375)
+still wouldn't make it, so I'd also look at why gpt2 scores dialogue and
+repetition as predictable.
+
+**Why I stopped:** that change reopens an evasion. EV02's plain average is
+0.335, so with a top-only clamp the "Really." fragments attack would go from
+"unsure" to a confident `human`. The clamp was built to stop exactly that.
+Trading a missed `human` label on Austen for a confident `human` on AI text
+isn't a trade I'd make without a better signal two first.
+
+#### 4. Criterion 3's `ai` label fell to 1/3
+
+**What I'd do:** nothing. This is the cost of the improvement, not a bug.
+Two of the aimed-AI paragraphs scored 0.7996 and 0.7723, just under the new
+line. Getting them back means lowering the line, which puts my own writing
+back under accusation.
+
+**Why I stopped:** I chose this on purpose. See the trade below.
+
+#### 5. Cheap edits still slide AI text into "unsure": EV01–EV04, EV06–EV09, PI01, PI03
+
+**What I'd do:** accept most of these as "unsure", because for this system
+that is the honest answer. The two cheap improvements I'd try:
+
+- **EV08 (65 characters):** add a minimum of about 50 words before giving
+  *any* confident label. EV08 would still be "unsure", but by rule, not by
+  accident, and the response could say "too short to judge".
+- **EV07 and PI03 (punctuation padding):** cap the punctuation part's
+  influence so one kind of mark repeated over and over can't take it all the
+  way to 0.0 on its own.
+
+**Why I stopped:** the rest (typos, fragments, a pasted quotation, a human
+opening, rare words) each move one signal, and the split rule then does
+what I built it to do. Catching them would mean letting one signal produce
+"ai" on its own, which brings back the 0.95 / 0.45 case from calibration and
+more false accusations. With these two signals there's no fix that catches
+evasion without accusing more writers. EV04 is in this group only because
+of my threshold change, and I'd leave it there.
+
+#### 6. Edits that fool both signals: EV05 and PI02
+
+**What I'd do:**
+
+- **EV05 (heavy human editing pass):** nothing. After a real rewrite, a lot
+  of that text *is* the person's writing. A `human` label there isn't far
+  wrong, and I don't think a detector should try to catch it.
+- **PI02 (fake "SYSTEM:" header):** score only the body of the text, and
+  ignore short header-like lines at the top (all caps followed by a colon)
+  when computing signal two. I'd also flag in the log when a submission
+  contains text addressed to "the system", so a reviewer sees it.
+
+**Why I stopped:** stripping lines by pattern is a blocklist, and an
+attacker can reword the header in a minute. It would fix PI02 as written
+and nothing else. The real problem is the same as group 5: neither signal
+reads meaning, so any text placed above the AI paragraph changes the score.
+
+**The trade I'd make if this ran for real:**
+
+<!-- Two sentences. Fewer wrong accusations means more AI text getting through.
+     Say which way you'd go and WHO PAYS FOR IT. -->
+
+I'd keep the line high and accept that more AI text gets through, because a
+wrong accusation lands on one writer, often the one with the plainest
+English and the least power to argue, while a missed detection is spread
+thinly across everyone. The people who pay are the teachers and reviewers who
+have to read the big "unsure" pile themselves, and the honest writers whose
+work gets compared against AI-assisted work that the system let through.
 
 
 
